@@ -9,6 +9,9 @@ const __dirname = path.dirname(__filename);
 
 const PORT = Number(process.env.PORT || 3000);
 const IS_PROD = process.env.NODE_ENV === 'production';
+// Vercel sets VERCEL=1 in both build and runtime. On Vercel we run as a stateless
+// serverless function: no app.listen(), no persistent WebSocket, no background timers.
+const IS_VERCEL = Boolean(process.env.VERCEL);
 
 // Egyptian Eastern Mediterranean Sector: Alexandria, Damietta, Port Said, Suez Northern Approach & Offshore Corridor
 const MED_EAST_BBOX: [[number, number], [number, number]] = [
@@ -371,9 +374,17 @@ class AisServerBridge {
   private sseClients = new Set<express.Response>();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private broadcastTimer: ReturnType<typeof setTimeout> | null = null;
-  private pruneTimer: ReturnType<typeof setInterval>;
+  private pruneTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
+    // Serverless: no persistent upstream WebSocket and no background timers.
+    if (IS_VERCEL) {
+      this.status = 'disconnected';
+      this.errorMessage =
+        'Live AIS WebSocket stream is not available on serverless hosting. Run the AIS bridge on a persistent host for live vessels.';
+      return;
+    }
+
     this.pruneTimer = setInterval(() => {
       const cutoff = Date.now() - 90 * 60 * 1000;
       let removed = false;
@@ -411,6 +422,10 @@ class AisServerBridge {
   }
 
   public reconnect(forceReconnect = true) {
+    if (IS_VERCEL) {
+      return this.getStatusPayload();
+    }
+
     const envKey = (process.env.AISSTREAM_API_KEY || '').trim();
     this.activeApiKey = envKey;
     this.keySource = envKey ? 'env' : 'none';
@@ -439,6 +454,18 @@ class AisServerBridge {
   }
 
   public addSseClient(res: express.Response) {
+    // Serverless: a long-lived SSE connection cannot be held open. Send one snapshot,
+    // tell EventSource to wait 60s before retrying, and close cleanly.
+    if (IS_VERCEL) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache, no-transform');
+      res.write('retry: 60000\n\n');
+      this.sendSse(res, 'status', this.getStatusPayload());
+      this.sendSse(res, 'vessels', []);
+      res.end();
+      return;
+    }
+
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
@@ -752,7 +779,10 @@ class AisServerBridge {
   }
 
   public dispose() {
-    clearInterval(this.pruneTimer);
+    if (this.pruneTimer) {
+      clearInterval(this.pruneTimer);
+      this.pruneTimer = null;
+    }
     this.closeUpstream();
   }
 }
@@ -1981,52 +2011,74 @@ async function getServerHistoricalTimeline(caseKeyOrDate: string, bypassCache: b
   return payload;
 }
 
+// ============================================================================
+// Express app + routes (registered at module load so Vercel's serverless
+// function has every /api route available the moment the module is imported)
+// ============================================================================
+
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 
-async function startServer() {
-  const aisBridge = new AisServerBridge();
+// Express 4 does not catch rejected promises from async handlers; forward them to the error middleware.
+const wrap =
+  (fn: express.RequestHandler): express.RequestHandler =>
+  (req, res, next) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+  };
 
-  app.get('/api/ais/status', (_req, res) => {
-    res.json(aisBridge.getStatusPayload());
+const aisBridge = new AisServerBridge();
+
+app.get('/api/ais/status', (_req, res) => {
+  res.json(aisBridge.getStatusPayload());
+});
+
+app.get('/api/ais/vessels', (_req, res) => {
+  res.json({
+    ...aisBridge.getStatusPayload(),
+    vessels: aisBridge.getVesselsList(),
   });
+});
 
-  app.get('/api/ais/vessels', (_req, res) => {
-    res.json({
-      ...aisBridge.getStatusPayload(),
-      vessels: aisBridge.getVesselsList(),
-    });
-  });
+app.get('/api/ais/stream', (_req, res) => {
+  aisBridge.addSseClient(res);
+});
 
-  app.get('/api/ais/stream', (req, res) => {
-    aisBridge.addSseClient(res);
-  });
+app.post('/api/ais/reconnect', (_req, res) => {
+  const status = aisBridge.reconnect(true);
+  res.json(status);
+});
 
-  app.post('/api/ais/reconnect', (_req, res) => {
-    const status = aisBridge.reconnect(true);
-    res.json(status);
-  });
-
-  // Server-Side Aggregated External Telemetry Endpoints
-  app.get('/api/telemetry/norad-tle', async (req, res) => {
+// Server-Side Aggregated External Telemetry Endpoints
+app.get(
+  '/api/telemetry/norad-tle',
+  wrap(async (req, res) => {
     const refresh = req.query.refresh === '1';
     const data = await getServerNoradTles(refresh);
     res.json(data);
-  });
+  })
+);
 
-  app.get('/api/telemetry/metocean', async (req, res) => {
+app.get(
+  '/api/telemetry/metocean',
+  wrap(async (req, res) => {
     const refresh = req.query.refresh === '1';
     const data = await getServerMetocean(refresh);
     res.json(data);
-  });
+  })
+);
 
-  app.get('/api/telemetry/asf-sar', async (req, res) => {
+app.get(
+  '/api/telemetry/asf-sar',
+  wrap(async (req, res) => {
     const refresh = req.query.refresh === '1';
     const data = await getServerAsfScenes(refresh);
     res.json(data);
-  });
+  })
+);
 
-  app.get('/api/telemetry/asf-quicklook', async (req, res) => {
+app.get(
+  '/api/telemetry/asf-quicklook',
+  wrap(async (req, res) => {
     const rawUrl = typeof req.query.url === 'string' ? req.query.url : '';
     if (!rawUrl) {
       res.status(400).send('Missing quicklook url');
@@ -2097,22 +2149,31 @@ async function startServer() {
     } finally {
       clearTimeout(timer);
     }
-  });
+  })
+);
 
-  app.get('/api/telemetry/eonet', async (req, res) => {
+app.get(
+  '/api/telemetry/eonet',
+  wrap(async (req, res) => {
     const refresh = req.query.refresh === '1';
     const data = await getServerEonetEvents(refresh);
     res.json(data);
-  });
+  })
+);
 
-  app.get('/api/telemetry/space-weather', async (req, res) => {
+app.get(
+  '/api/telemetry/space-weather',
+  wrap(async (req, res) => {
     const refresh = req.query.refresh === '1';
     const data = await getServerSpaceWeather(refresh);
     res.json(data);
-  });
+  })
+);
 
-  // Authenticated CARTO Dark Matter proxy for TACTICAL DARK RADAR (hides CARTO_API_KEY server-side)
-  app.get('/api/tiles/carto-dark/:z/:x/:yFile', async (req, res) => {
+// Authenticated CARTO Dark Matter proxy for TACTICAL DARK RADAR (hides CARTO_API_KEY server-side)
+app.get(
+  '/api/tiles/carto-dark/:z/:x/:yFile',
+  wrap(async (req, res) => {
     const z = Number(req.params.z);
     const x = Number(req.params.x);
     const yMatch = req.params.yFile.match(/^(\d+)(@2x)?\.png$/);
@@ -2168,10 +2229,13 @@ async function startServer() {
     } finally {
       clearTimeout(timer);
     }
-  });
+  })
+);
 
-  // Historical Egyptian Mediterranean Incident Replay API (ASF + Open-Meteo Archive + 1440m Open-Water AIS)
-  app.get('/api/historical/:caseId', async (req, res) => {
+// Historical Egyptian Mediterranean Incident Replay API (ASF + Open-Meteo Archive + 1440m Open-Water AIS)
+app.get(
+  '/api/historical/:caseId',
+  wrap(async (req, res) => {
     const rawId = String(req.params.caseId || '').trim();
     const resolvedDate = CASE_ID_ALIASES[rawId];
     if (!resolvedDate || !HISTORICAL_CASES[resolvedDate]) {
@@ -2186,8 +2250,27 @@ async function startServer() {
       const msg = err instanceof Error ? err.message : 'Historical replay fetch failed';
       res.status(500).json({ error: msg });
     }
-  });
+  })
+);
 
+// Unknown /api routes must return JSON 404, never fall through to the SPA index.html
+app.use('/api', (_req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
+
+// Centralised error handler for any async route failure
+app.use(
+  (err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    const msg = err instanceof Error ? err.message : 'Internal server error';
+    if (!res.headersSent) {
+      res.status(500).json({ error: msg });
+    }
+  }
+);
+
+// Local dev / non-Vercel production only: Vite middleware or static dist + app.listen().
+// Never executed on Vercel (static assets are served by Vercel's CDN, API by the function).
+async function startServer() {
   if (!IS_PROD) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
@@ -2208,28 +2291,26 @@ async function startServer() {
     }
   }
 
-  if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
-    const server = app.listen(PORT, '0.0.0.0', () => {
-      console.log(`AEGIS-SAR server running on http://0.0.0.0:${PORT}`);
-      // Pre-warm telemetry caches so first client request receives live 200 OK data immediately
-      void Promise.allSettled([
-        getServerAsfScenes(false),
-        getServerNoradTles(false),
-        getServerMetocean(false),
-      ]);
-    });
+  const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`AEGIS-SAR server running on http://0.0.0.0:${PORT}`);
+    // Pre-warm telemetry caches so first client request receives live 200 OK data immediately
+    void Promise.allSettled([
+      getServerAsfScenes(false),
+      getServerNoradTles(false),
+      getServerMetocean(false),
+    ]);
+  });
 
-    const shutdown = () => {
-      aisBridge.dispose();
-      server.close(() => process.exit(0));
-    };
-    process.on('SIGINT', shutdown);
-    process.on('SIGTERM', shutdown);
-  }
+  const shutdown = () => {
+    aisBridge.dispose();
+    server.close(() => process.exit(0));
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }
 
 export default app;
 
-if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
-  startServer();
+if (!IS_VERCEL) {
+  void startServer();
 }
