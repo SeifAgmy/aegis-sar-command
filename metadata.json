@@ -1,0 +1,6 @@
+{
+  "name": "AEGIS-SAR // MED-EAST ORBITAL COMMAND",
+  "description": "Maritime Security & Marine Pollution Intelligence Platform for the Egyptian Eastern Mediterranean Coastline (Alexandria, Port Said, and Northern Suez Canal Approach).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

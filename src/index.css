@@ -1,0 +1,282 @@
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+@layer base {
+  :root {
+    --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+    --abyssal-navy: #060d14;
+    --slate-hull: #101c28;
+    --radar-cyan: #22d3ee;
+    --chart-amber: #f59e0b;
+    --hud-bg: rgba(6, 13, 20, 0.88);
+    --hud-border: rgba(34, 211, 238, 0.24);
+    --hud-border-subtle: rgba(148, 163, 184, 0.16);
+  }
+
+  html,
+  body,
+  #root {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    font-family: var(--font-sans);
+    background-color: #060d14;
+    color: #e2e8f0;
+  }
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-glass {
+  background: rgba(6, 13, 20, 0.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(34, 211, 238, 0.24);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.58);
+}
+
+.hud-glass-subtle {
+  background: rgba(16, 28, 40, 0.84);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(34, 211, 238, 0.2);
+}
+
+.hud-popover {
+  background: rgba(6, 13, 20, 0.97);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(34, 211, 238, 0.36);
+  box-shadow: 0 18px 48px rgba(2, 6, 14, 0.94);
+}
+
+/* Custom Tactical Scrollbar (Slate Hull Track / Radar Cyan Thumb) */
+.hud-scroll {
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(34, 211, 238, 0.45) #101c28;
+}
+
+.hud-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.hud-scroll::-webkit-scrollbar-track {
+  background: #101c28;
+  border-radius: 3px;
+}
+
+.hud-scroll::-webkit-scrollbar-thumb {
+  background: rgba(34, 211, 238, 0.42);
+  border-radius: 3px;
+  border: 1px solid rgba(6, 13, 20, 0.6);
+}
+
+.hud-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(34, 211, 238, 0.68);
+}
+
+/* Leaflet Tactical Overrides */
+.leaflet-container {
+  background: #060d14 !important;
+  font-family: var(--font-sans);
+  cursor: crosshair;
+  overscroll-behavior: none;
+  touch-action: none;
+}
+
+.nautical-ocean-base-tile {
+  filter: brightness(0.74) contrast(1.1) saturate(0.88);
+}
+
+.nautical-ocean-ref-tile {
+  filter: brightness(0.95) contrast(1.14);
+}
+
+.leaflet-bottom.leaflet-right {
+  bottom: 98px;
+  right: 12px;
+}
+
+.leaflet-control-attribution {
+  background: rgba(6, 13, 20, 0.82) !important;
+  color: rgba(148, 163, 184, 0.78) !important;
+  font-family: var(--font-mono) !important;
+  font-size: 9px !important;
+  padding: 2px 6px !important;
+  border-radius: 4px;
+  border: 1px solid rgba(34, 211, 238, 0.16);
+}
+
+.leaflet-control-attribution a {
+  color: rgba(34, 211, 238, 0.85) !important;
+}
+
+.leaflet-tooltip.tactical-tooltip {
+  background: rgba(6, 13, 20, 0.95);
+  border: 1px solid rgba(34, 211, 238, 0.42);
+  color: #e2e8f0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 7px 9px;
+  border-radius: 4px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.68);
+}
+
+.leaflet-tooltip-top.tactical-tooltip::before {
+  border-top-color: rgba(34, 211, 238, 0.42);
+}
+
+.leaflet-popup.tactical-tooltip {
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+
+.leaflet-popup.tactical-tooltip .leaflet-popup-content-wrapper {
+  background: rgba(6, 13, 20, 0.97);
+  border: 1px solid rgba(34, 211, 238, 0.45);
+  color: #e2e8f0;
+  border-radius: 6px;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.82);
+  overflow: hidden;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+
+.leaflet-popup.tactical-tooltip .leaflet-popup-content {
+  margin: 10px 6px 10px 10px;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+
+.vessel-popup-scroll {
+  max-height: 16rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(34, 211, 238, 0.45) #101c28;
+}
+
+.leaflet-popup.tactical-tooltip .leaflet-popup-tip {
+  background: rgba(6, 13, 20, 0.96);
+  border: 1px solid rgba(34, 211, 238, 0.4);
+}
+
+.leaflet-popup.tactical-tooltip a.leaflet-popup-close-button {
+  color: #94a3b8;
+  z-index: 5;
+}
+
+.leaflet-popup.tactical-tooltip a.leaflet-popup-close-button:hover {
+  color: #22d3ee;
+}
+
+.vessel-div-icon {
+  background: transparent;
+  border: none;
+}
+
+.asf-clickable-swath {
+  cursor: pointer !important;
+}
+
+@keyframes sarPulse {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.85;
+  }
+  70% {
+    transform: scale(1.65);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.65);
+    opacity: 0;
+  }
+}
+
+.dark-vessel-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: sarPulse 2.2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+@keyframes simReveal {
+  0% {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.vessel-sim-reveal {
+  animation: simReveal 0.22s ease-out both;
+}
+
+/* Range Scrubber Styling (Nautical Hydrographic Cyan to Amber Track) */
+input[type='range'].tactical-range {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type='range'].tactical-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    rgba(16, 28, 40, 0.95) 0%,
+    rgba(34, 211, 238, 0.65) 66.67%,
+    rgba(245, 158, 11, 0.75) 100%
+  );
+}
+
+input[type='range'].tactical-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  margin-top: -6px;
+  height: 16px;
+  width: 10px;
+  border-radius: 2px;
+  background: #22d3ee;
+  border: 1px solid #060d14;
+  box-shadow: 0 0 10px rgba(34, 211, 238, 0.75);
+}
+
+/* Print Styles for Violation Dossier Modal */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #violation-dossier-printable,
+  #violation-dossier-printable * {
+    visibility: visible;
+  }
+  #violation-dossier-printable {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: auto;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 24px !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
