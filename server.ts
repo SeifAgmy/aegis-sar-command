@@ -1981,10 +1981,10 @@ async function getServerHistoricalTimeline(caseKeyOrDate: string, bypassCache: b
   return payload;
 }
 
-async function startServer() {
-  const app = express();
-  app.use(express.json({ limit: '1mb' }));
+const app = express();
+app.use(express.json({ limit: '1mb' }));
 
+async function startServer() {
   const aisBridge = new AisServerBridge();
 
   app.get('/api/ais/status', (_req, res) => {
@@ -2208,22 +2208,28 @@ async function startServer() {
     }
   }
 
-  const server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`AEGIS-SAR server running on http://0.0.0.0:${PORT}`);
-    // Pre-warm telemetry caches so first client request receives live 200 OK data immediately
-    void Promise.allSettled([
-      getServerAsfScenes(false),
-      getServerNoradTles(false),
-      getServerMetocean(false),
-    ]);
-  });
+  if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+    const server = app.listen(PORT, '0.0.0.0', () => {
+      console.log(`AEGIS-SAR server running on http://0.0.0.0:${PORT}`);
+      // Pre-warm telemetry caches so first client request receives live 200 OK data immediately
+      void Promise.allSettled([
+        getServerAsfScenes(false),
+        getServerNoradTles(false),
+        getServerMetocean(false),
+      ]);
+    });
 
-  const shutdown = () => {
-    aisBridge.dispose();
-    server.close(() => process.exit(0));
-  };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
+    const shutdown = () => {
+      aisBridge.dispose();
+      server.close(() => process.exit(0));
+    };
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
+  }
 }
 
-startServer();
+export default app;
+
+if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+  startServer();
+}
